@@ -8,7 +8,7 @@ import type { Email, EmailStatus } from '../db/schema.js';
  * Indexing failures are logged and never block scheduling or sending; search falls back to
  * Postgres when Elasticsearch is not configured or unreachable.
  */
-export const es = env.ELASTICSEARCH_URL ? new Client({ node: env.ELASTICSEARCH_URL }) : null;
+export const es = env.ELASTICSEARCH_URL ? new Client({ node: env.ELASTICSEARCH_URL, requestTimeout: 10_000 }) : null;
 const index = env.ELASTICSEARCH_INDEX;
 
 export interface EmailDocument {
@@ -121,6 +121,8 @@ export async function searchEmailIds(params: SearchParams): Promise<{ ids: strin
                 query: params.query,
                 fields: ['recipient^3', 'subject^2', 'body'],
                 type: 'bool_prefix',
+                // every typed term must match, so "y@exa" doesn't also return x@example.com
+                operator: 'and',
               },
             },
           ],

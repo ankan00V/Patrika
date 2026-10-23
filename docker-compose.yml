@@ -35,13 +35,15 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
+      # Single node: don't stop accepting writes when the disk is >90% full (small VMs, laptops).
+      - cluster.routing.allocation.disk.threshold_enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
       - "9200:9200"
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
       interval: 10s
       retries: 20
 

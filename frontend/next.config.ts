@@ -4,6 +4,16 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:4000";
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  // The dev server only serves its assets to localhost unless told otherwise. Slack OAuth needs an https
+  // tunnel to the dashboard, so allow the usual tunnel domains.
+  allowedDevOrigins: [
+    "*.ngrok-free.app",
+    "*.ngrok-free.dev",
+    "*.ngrok.app",
+    "*.ngrok.io",
+    "*.trycloudflare.com",
+    "*.loca.lt",
+  ],
   // The browser only talks to this origin. /api/* and the Bull Board UI are proxied to the
   // Express backend, so session cookies and OAuth redirects stay first-party.
   async rewrites() {

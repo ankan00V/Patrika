@@ -22,7 +22,8 @@ export const QUEUE_DASHBOARD_PATH = '/admin/queues';
 
 export function createApp() {
   const app = express();
-  app.set('trust proxy', 'loopback');
+  // Behind Next.js locally and Caddy (another container) in production.
+  app.set('trust proxy', ['loopback', 'uniquelocal']);
   app.disable('x-powered-by');
   app.use(cookieParser());
   app.use(express.json({ limit: '10mb' })); // room for base64 attachments

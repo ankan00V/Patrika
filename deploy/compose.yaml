@@ -1,0 +1,105 @@
+# Production stack: everything on one server behind Caddy (automatic HTTPS).
+#   cd deploy && cp .env.example .env   # fill it in
+#   docker compose up -d --build
+name: patrika
+
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: backend/Dockerfile
+  image: patrika-backend
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    APP_URL: https://${DOMAIN:?set DOMAIN in deploy/.env}
+    DATABASE_URL: ${DATABASE_URL:-postgres://patrika:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/patrika}
+    REDIS_URL: redis://redis:6379
+    ELASTICSEARCH_URL: http://elasticsearch:9200
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    elasticsearch: { condition: service_healthy }
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web, api]
+
+  web:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      args:
+        BACKEND_URL: http://api:4000
+    restart: unless-stopped
+    depends_on: [api]
+
+  api:
+    <<: *backend
+    command: ["node", "dist/api.js"]
+
+  worker:
+    <<: *backend
+    command: ["node", "dist/worker.js"]
+    # Let in-flight sends finish on `docker compose stop` / redeploys.
+    stop_grace_period: 60s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: patrika
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: patrika
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U patrika"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      # Single node: don't stop accepting writes when the disk is >90% full (small VMs, laptops).
+      - cluster.routing.allocation.disk.threshold_enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      interval: 10s
+      retries: 30
+
+volumes:
+  pgdata:
+  redisdata:
+  esdata:
+  caddy_data:
+  caddy_config:
