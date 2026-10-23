@@ -12,7 +12,7 @@ import { es } from './lib/search.js';
 import { authRouter } from './auth/google.js';
 import { requireAuth } from './auth/session.js';
 import { campaignsRouter } from './modules/campaigns/routes.js';
-import { emailsRouter } from './modules/emails/routes.js';
+import { attachmentsRouter, emailsRouter } from './modules/emails/routes.js';
 import { sendersRouter } from './modules/senders/routes.js';
 import { slackRouter } from './modules/slack/routes.js';
 import { emailQueue } from './queue/emailQueue.js';
@@ -25,7 +25,7 @@ export function createApp() {
   app.set('trust proxy', 'loopback');
   app.disable('x-powered-by');
   app.use(cookieParser());
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '10mb' })); // room for base64 attachments
 
   // Live BullMQ dashboard (Bull Board). Signed-in users only; anonymous visitors go to login.
   const board = new ExpressAdapter();
@@ -58,6 +58,7 @@ export function createApp() {
   api.use('/auth', authRouter);
   api.use('/campaigns', campaignsRouter);
   api.use('/emails', emailsRouter);
+  api.use('/attachments', attachmentsRouter);
   api.use('/senders', sendersRouter);
   api.use('/slack', slackRouter);
   api.use(notFound);

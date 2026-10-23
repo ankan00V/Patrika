@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Patrika brand green (from the Figma: login button, compose, active nav) */
+  --color-brand-50: #f1f9f2;
+  --color-brand-100: #e4f4e7;
+  --color-brand-200: #c6e7cc;
+  --color-brand-300: #98d3a3;
+  --color-brand-400: #64ba73;
+  --color-brand-500: #4aa452;
+  --color-brand-600: #3b8a43;
+  --color-brand-700: #316f38;
+  --color-brand-800: #2a5a30;
+  --color-brand-900: #234a28;
+
+  /* Neutral greys */
+  --color-ink-900: #1c1c1c;
+  --color-ink-700: #3d3d3d;
+  --color-ink-500: #6e6e6e;
+  --color-ink-400: #9b9b9b;
+  --color-ink-300: #c4c4c4;
+  --color-ink-200: #e7e7e7;
+  --color-ink-100: #f2f3f2;
+  --color-ink-50: #f8f8f8;
+
+  --font-display: var(--font-pixel), var(--font-inter), sans-serif;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-pop: 0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-slide-up: slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-shimmer: shimmer 1.4s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+}
+
+@layer base {
+  html {
+    @apply bg-white text-ink-900;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, var(--color-ink-100) 0%, var(--color-ink-200) 50%, var(--color-ink-100) 100%);
+  background-size: 800px 100%;
+  animation: var(--animate-shimmer);
+  border-radius: 6px;
+}
+
+/* Rendered email bodies (detail page) and the compose editor share these styles. */
+@utility email-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-ink-900);
+  overflow-wrap: anywhere;
+  & p, & div { margin: 0 0 0.75em; }
+  & ul { list-style: disc; padding-left: 1.5em; margin: 0 0 0.75em; }
+  & ol { list-style: decimal; padding-left: 1.5em; margin: 0 0 0.75em; }
+  & blockquote {
+    margin: 0 0 0.75em;
+    padding: 0.6em 0.9em;
+    border-left: 3px solid #f5c84c;
+    background: #fff9e6;
+    border-radius: 4px;
+  }
+  & a { color: var(--color-brand-600); text-decoration: underline; }
+  & h1 { font-size: 1.5em; font-weight: 600; }
+  & h2 { font-size: 1.25em; font-weight: 600; }
+}

@@ -25,15 +25,14 @@ function transportFor(sender: Sender): Transporter {
   return transport;
 }
 
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
 export interface OutgoingEmail {
   /** Stable id used to build the Message-ID header, so a resend would be recognisable. */
   emailId: string;
   to: string;
   subject: string;
-  body: string;
+  html: string;
+  text: string;
+  attachments: { filename: string; contentType: string; content: Buffer }[];
 }
 
 export async function sendEmail(sender: Sender, email: OutgoingEmail) {
@@ -41,8 +40,9 @@ export async function sendEmail(sender: Sender, email: OutgoingEmail) {
     from: { name: sender.name, address: sender.email },
     to: email.to,
     subject: email.subject,
-    text: email.body,
-    html: `<div style="font-family:system-ui,sans-serif;white-space:pre-wrap">${escapeHtml(email.body)}</div>`,
+    text: email.text,
+    html: `<div style="font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.6">${email.html}</div>`,
+    attachments: email.attachments,
     messageId: `<${email.emailId}@patrika.local>`,
     headers: { 'X-Patrika-Email-Id': email.emailId },
   });

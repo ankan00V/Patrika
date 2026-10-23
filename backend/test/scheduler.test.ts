@@ -3,7 +3,7 @@ import { Worker } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { env } from '../src/config/env.js';
 import { db, pool } from '../src/db/client.js';
-import { emails, type User } from '../src/db/schema.js';
+import { emails, senders, type User } from '../src/db/schema.js';
 import { createRedis, redis } from '../src/lib/redis.js';
 import { windowOf } from '../src/lib/time.js';
 import { createCampaign } from '../src/modules/campaigns/service.js';
@@ -22,7 +22,8 @@ const startWorker = () =>
 const campaignInput = (overrides: Partial<Parameters<typeof createCampaign>[1]> = {}) => ({
   idempotencyKey: `key-${Math.random().toString(36).slice(2)}`,
   subject: 'Quarterly update',
-  body: 'Hello!',
+  body: '<p>Hello <b>there</b>!</p><script>alert(1)</script>',
+  attachments: [],
   recipients: ['a@example.com', 'b@example.com', 'c@example.com'],
   startAt: new Date(),
   delayBetweenSeconds: 0,
@@ -57,6 +58,25 @@ describe('scheduler (Postgres + Redis + BullMQ)', () => {
     await worker.close();
 
     expect(smtp.received.map((m) => m.to[0]).sort()).toEqual(['a@example.com', 'b@example.com', 'c@example.com']);
+    expect(smtp.received[0]!.raw).toContain('<b>there</b>');
+    expect(smtp.received[0]!.raw).not.toContain('<script>');
+  });
+
+  it('sends only from the chosen sender and includes attachments', async () => {
+    const [, second] = await db.select().from(senders).orderBy(senders.email);
+    await createCampaign(
+      user,
+      campaignInput({
+        senderId: second!.id,
+        attachments: [{ filename: 'notes.txt', contentType: 'text/plain', contentBase64: Buffer.from('hi').toString('base64') }],
+      }),
+    );
+    const worker = startWorker();
+    await waitFor(async () => (await statuses()).every((s) => s === 'sent'));
+    await worker.close();
+
+    expect(new Set(smtp.received.map((m) => m.from))).toEqual(new Set([second!.email]));
+    expect(smtp.received[0]!.raw).toContain('filename=notes.txt');
   });
 
   it('treats a repeated Schedule request with the same idempotency key as one campaign', async () => {

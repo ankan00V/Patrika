@@ -2,7 +2,7 @@ import { DelayedError, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 import { env } from '../config/env.js';
 import { db } from '../db/client.js';
-import { campaigns, emails, senders, type Sender } from '../db/schema.js';
+import { attachments, campaigns, emails, senders, type Sender } from '../db/schema.js';
 import { logger } from '../lib/logger.js';
 import { updateEmailDocument } from '../lib/search.js';
 import { windowOf, windowStart } from '../lib/time.js';
@@ -109,7 +109,9 @@ export async function processEmailJob(job: Job<ProcessorData>, token?: string): 
       emailId: email.id,
       to: email.recipient,
       subject: campaign.subject,
-      body: campaign.body,
+      html: campaign.body,
+      text: campaign.bodyText,
+      attachments: await campaignAttachments(campaign.id),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -142,6 +144,23 @@ export async function processEmailJob(job: Job<ProcessorData>, token?: string): 
   }
 
   return { outcome: 'sent', ...result };
+}
+
+/** Attachments are shared by every email of a campaign, so keep a few campaigns' files decoded. */
+const attachmentCache = new Map<string, { filename: string; contentType: string; content: Buffer }[]>();
+
+async function campaignAttachments(campaignId: string) {
+  const cached = attachmentCache.get(campaignId);
+  if (cached) return cached;
+  const rows = await db.select().from(attachments).where(eq(attachments.campaignId, campaignId));
+  const files = rows.map((a) => ({
+    filename: a.filename,
+    contentType: a.contentType,
+    content: Buffer.from(a.contentBase64, 'base64'),
+  }));
+  attachmentCache.set(campaignId, files);
+  if (attachmentCache.size > 20) attachmentCache.delete(attachmentCache.keys().next().value!);
+  return files;
 }
 
 async function markSent(emailId: string, messageId: string, previewUrl: string | null) {

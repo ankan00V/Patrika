@@ -1,9 +1,12 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { env } from '../config/env.js';
+import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { users } from '../db/schema.js';
+import { users, type User } from '../db/schema.js';
+import { redis } from '../lib/redis.js';
+import { hashPassword, verifyPassword } from './password.js';
 import { logger } from '../lib/logger.js';
 import { HttpError } from '../http/errors.js';
 import {
@@ -77,26 +80,76 @@ authRouter.get('/google/callback', async (req, res) => {
     if (!profileRes.ok) throw new Error(`userinfo failed: ${profileRes.status}`);
     const profile = userInfo.parse(await profileRes.json());
 
-    const [user] = await db
-      .insert(users)
-      .values({
-        googleId: profile.sub,
-        email: profile.email,
-        name: profile.name ?? profile.email,
-        avatarUrl: profile.picture ?? null,
-      })
-      .onConflictDoUpdate({
-        target: users.googleId,
-        set: { email: profile.email, name: profile.name ?? profile.email, avatarUrl: profile.picture ?? null },
-      })
-      .returning();
-
-    res.cookie(SESSION_COOKIE, createSessionToken(user!.id), cookieOptions(sessionCookieMaxAge));
+    const user = await upsertGoogleUser(profile);
+    startSession(res, user.id);
     res.redirect(`${env.APP_URL}/dashboard`);
   } catch (err) {
     logger.error({ err }, 'Google login failed');
     fail('google_login_failed');
   }
+});
+
+/** Find the account by Google id, else link it to an existing email account, else create one. */
+async function upsertGoogleUser(profile: z.infer<typeof userInfo>): Promise<User> {
+  const email = profile.email.toLowerCase();
+  const profileFields = { name: profile.name ?? email, avatarUrl: profile.picture ?? null };
+  const byGoogle = await db.query.users.findFirst({ where: eq(users.googleId, profile.sub) });
+  const byEmail = byGoogle ?? (await db.query.users.findFirst({ where: eq(users.email, email) }));
+  if (byEmail) {
+    const [updated] = await db
+      .update(users)
+      .set({ googleId: profile.sub, email, ...profileFields })
+      .where(eq(users.id, byEmail.id))
+      .returning();
+    return updated!;
+  }
+  const [created] = await db.insert(users).values({ googleId: profile.sub, email, ...profileFields }).returning();
+  return created!;
+}
+
+function startSession(res: Response, userId: string) {
+  res.cookie(SESSION_COOKIE, createSessionToken(userId), cookieOptions(sessionCookieMaxAge));
+}
+
+const emailLogin = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+});
+
+const LOGIN_ATTEMPTS = 10;
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+
+/**
+ * "Login" and "or sign up through email" in one step: an unknown address creates an account,
+ * a known one must match its password. Attempts are throttled per IP + address in Redis.
+ */
+authRouter.post('/email', async (req, res) => {
+  const { email, password } = emailLogin.parse(req.body);
+
+  const throttleKey = `patrika:login:${req.ip}:${email}`;
+  const attempts = await redis.incr(throttleKey);
+  if (attempts === 1) await redis.expire(throttleKey, LOGIN_WINDOW_SECONDS);
+  if (attempts > LOGIN_ATTEMPTS) throw new HttpError(429, 'Too many attempts. Try again in 15 minutes.');
+
+  const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+  let user: User;
+  if (!existing) {
+    const [created] = await db
+      .insert(users)
+      .values({ email, name: email.split('@')[0]!, passwordHash: await hashPassword(password) })
+      .returning();
+    user = created!;
+  } else if (!existing.passwordHash) {
+    throw new HttpError(409, 'This email uses Google sign-in. Continue with Google instead.');
+  } else if (!(await verifyPassword(password, existing.passwordHash))) {
+    throw new HttpError(401, 'Incorrect email or password');
+  } else {
+    user = existing;
+  }
+
+  await redis.del(throttleKey);
+  startSession(res, user.id);
+  res.status(existing ? 200 : 201).json({ created: !existing });
 });
 
 authRouter.get('/me', requireAuth, async (req, res) => {

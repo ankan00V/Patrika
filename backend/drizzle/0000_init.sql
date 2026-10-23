@@ -1,10 +1,23 @@
 CREATE TYPE "public"."email_status" AS ENUM('scheduled', 'sending', 'sent', 'failed');--> statement-breakpoint
+CREATE TABLE "attachments" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"campaign_id" uuid NOT NULL,
+	"filename" text NOT NULL,
+	"content_type" text NOT NULL,
+	"size" integer NOT NULL,
+	"content_base64" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "campaigns" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
 	"idempotency_key" text NOT NULL,
 	"subject" text NOT NULL,
 	"body" text NOT NULL,
+	"body_text" text NOT NULL,
+	"sender_id" uuid,
 	"start_at" timestamp with time zone NOT NULL,
 	"delay_between_ms" integer NOT NULL,
 	"hourly_limit" integer NOT NULL,
@@ -24,6 +37,7 @@ CREATE TABLE "emails" (
 	"scheduled_at" timestamp with time zone NOT NULL,
 	"deferrals" integer DEFAULT 0 NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
+	"starred" boolean DEFAULT false NOT NULL,
 	"sent_at" timestamp with time zone,
 	"failed_at" timestamp with time zone,
 	"message_id" text,
@@ -58,20 +72,25 @@ CREATE TABLE "slack_connections" (
 --> statement-breakpoint
 CREATE TABLE "users" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"google_id" text NOT NULL,
 	"email" text NOT NULL,
+	"google_id" text,
+	"password_hash" text,
 	"name" text NOT NULL,
 	"avatar_url" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "users_email_unique" UNIQUE("email"),
 	CONSTRAINT "users_google_id_unique" UNIQUE("google_id")
 );
 --> statement-breakpoint
+ALTER TABLE "attachments" ADD CONSTRAINT "attachments_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_sender_id_senders_id_fk" FOREIGN KEY ("sender_id") REFERENCES "public"."senders"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "emails" ADD CONSTRAINT "emails_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "emails" ADD CONSTRAINT "emails_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "emails" ADD CONSTRAINT "emails_sender_id_senders_id_fk" FOREIGN KEY ("sender_id") REFERENCES "public"."senders"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "slack_connections" ADD CONSTRAINT "slack_connections_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "attachments_campaign_idx" ON "attachments" USING btree ("campaign_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "campaigns_user_idempotency_idx" ON "campaigns" USING btree ("user_id","idempotency_key");--> statement-breakpoint
 CREATE UNIQUE INDEX "emails_campaign_recipient_idx" ON "emails" USING btree ("campaign_id","recipient");--> statement-breakpoint
 CREATE INDEX "emails_user_status_scheduled_idx" ON "emails" USING btree ("user_id","status","scheduled_at");--> statement-breakpoint

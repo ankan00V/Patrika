@@ -1,11 +1,11 @@
 import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
-import { campaigns, emails, senders, type EmailStatus } from '../../db/schema.js';
+import { attachments, campaigns, emails, senders, type EmailStatus } from '../../db/schema.js';
 import { searchEmailIds } from '../../lib/search.js';
 
 export type EmailTab = 'scheduled' | 'sent';
 
-const TAB_STATUSES: Record<EmailTab, EmailStatus[]> = {
+export const TAB_STATUSES: Record<EmailTab, EmailStatus[]> = {
   scheduled: ['scheduled', 'sending'],
   sent: ['sent', 'failed'],
 };
@@ -17,7 +17,9 @@ const listColumns = {
   campaignId: emails.campaignId,
   recipient: emails.recipient,
   subject: campaigns.subject,
+  preview: sql<string>`regexp_replace(left(${campaigns.bodyText}, 200), '[[:space:]]+', ' ', 'g')`,
   status: emails.status,
+  starred: emails.starred,
   scheduledAt: emails.scheduledAt,
   sentAt: emails.sentAt,
   failedAt: emails.failedAt,
@@ -35,10 +37,13 @@ export interface ListParams {
   page: number;
   pageSize: number;
   query?: string;
+  /** Narrow to one status of the tab, e.g. only `failed` in Sent. */
+  status?: EmailStatus;
+  starred?: boolean;
 }
 
-export async function listEmails({ userId, tab, page, pageSize, query }: ListParams) {
-  const statuses = TAB_STATUSES[tab];
+export async function listEmails({ userId, tab, page, pageSize, query, status, starred }: ListParams) {
+  const statuses = status && TAB_STATUSES[tab].includes(status) ? [status] : TAB_STATUSES[tab];
   const orderBy = tab === 'scheduled' ? [asc(emails.scheduledAt), asc(emails.seq)] : [desc(sentOrFailedAt)];
   const base = db
     .select(listColumns)
@@ -56,7 +61,7 @@ export async function listEmails({ userId, tab, page, pageSize, query }: ListPar
       pageSize,
       sort: tab === 'scheduled' ? { field: 'scheduledAt', order: 'asc' } : { field: 'sentAt', order: 'desc' },
     });
-    if (hits) {
+    if (hits && !starred) {
       if (hits.ids.length === 0) return { items: [], total: hits.total, page, pageSize, searchEngine: 'elasticsearch' };
       const rows = await base.where(and(eq(emails.userId, userId), inArray(emails.id, hits.ids)));
       const byId = new Map(rows.map((r) => [r.id, r]));
@@ -66,9 +71,10 @@ export async function listEmails({ userId, tab, page, pageSize, query }: ListPar
   }
 
   const filters: SQL[] = [eq(emails.userId, userId), inArray(emails.status, statuses)];
+  if (starred) filters.push(eq(emails.starred, true));
   if (query) {
     const like = `%${query.replace(/[%_\\]/g, '\\$&')}%`;
-    filters.push(or(ilike(emails.recipient, like), ilike(campaigns.subject, like))!);
+    filters.push(or(ilike(emails.recipient, like), ilike(campaigns.subject, like), ilike(campaigns.bodyText, like))!);
   }
   const where = and(...filters);
 
@@ -108,5 +114,33 @@ export async function getEmail(userId: string, id: string) {
     .innerJoin(campaigns, eq(campaigns.id, emails.campaignId))
     .innerJoin(senders, eq(senders.id, emails.senderId))
     .where(and(eq(emails.userId, userId), eq(emails.id, id)));
+  if (!row) return null;
+  const files = await db
+    .select({ id: attachments.id, filename: attachments.filename, contentType: attachments.contentType, size: attachments.size })
+    .from(attachments)
+    .where(eq(attachments.campaignId, row.campaignId));
+  return { ...row, attachments: files };
+}
+
+export async function setStarred(userId: string, id: string, starred: boolean) {
+  const [row] = await db
+    .update(emails)
+    .set({ starred })
+    .where(and(eq(emails.userId, userId), eq(emails.id, id)))
+    .returning({ id: emails.id, starred: emails.starred });
+  return row ?? null;
+}
+
+/** Attachment bytes, only if the file belongs to one of the user's campaigns. */
+export async function getAttachment(userId: string, id: string) {
+  const [row] = await db
+    .select({
+      filename: attachments.filename,
+      contentType: attachments.contentType,
+      contentBase64: attachments.contentBase64,
+    })
+    .from(attachments)
+    .innerJoin(campaigns, eq(campaigns.id, attachments.campaignId))
+    .where(and(eq(attachments.id, id), eq(campaigns.userId, userId)));
   return row ?? null;
 }

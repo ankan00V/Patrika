@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { env } from './config/env.js';
 import { pool } from './db/client.js';
+import { runMigrations } from './db/migrate.js';
 import { logger } from './lib/logger.js';
 import { createRedis, redis } from './lib/redis.js';
 import { closeTransports } from './modules/senders/mailer.js';
@@ -9,6 +10,7 @@ import { processEmailJob } from './queue/processor.js';
 import { reconcileScheduledEmails } from './queue/reconcile.js';
 
 async function main() {
+  await runMigrations();
   await reconcileScheduledEmails();
 
   const worker = new Worker(env.EMAIL_QUEUE_NAME, processEmailJob, {
