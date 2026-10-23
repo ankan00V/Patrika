@@ -18,11 +18,12 @@ going through restarts without losing an email or sending one twice.
 2. [Tech stack](#tech-stack)
 3. [Running it locally](#running-it-locally)
 4. [Configuration](#configuration)
-5. [Architecture](#architecture)
-6. [API](#api)
-7. [Tests](#tests)
-8. [Demo script](#demo-script)
-9. [Assumptions & trade-offs](#assumptions--trade-offs)
+5. [Deployment](#deployment)
+6. [Architecture](#architecture)
+7. [API](#api)
+8. [Tests](#tests)
+9. [Demo script](#demo-script)
+10. [Assumptions & trade-offs](#assumptions--trade-offs)
 
 ---
 
@@ -68,11 +69,12 @@ going through restarts without losing an email or sending one twice.
 | Queue / rate limits | **Redis 7**, AOF persistence, `noeviction` |
 | Search | **Elasticsearch 8** |
 | Frontend | **Next.js 16** (App Router), React 19, **Tailwind CSS 4**, TanStack Query, lucide icons |
-| Infra | `docker-compose.yml` for Postgres, Redis and Elasticsearch |
+| Infra | `docker-compose.yml` for local Postgres, Redis and Elasticsearch; `deploy/` for production (Docker + Caddy) |
 
 ```
 patrika/
-├── docker-compose.yml        Postgres, Redis (AOF), Elasticsearch
+├── docker-compose.yml        local Postgres, Redis (AOF), Elasticsearch
+├── deploy/                   production: compose.yaml, Caddyfile, .env.example, guide
 ├── backend/
 │   ├── drizzle/              SQL migrations
 │   ├── src/
@@ -202,6 +204,24 @@ Ethereal preview link: the ↗ icon on the email page.
 4. Put the app's client id and secret in `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
 5. In the dashboard click **Connect Slack**, pick a channel, and you get a confirmation message. **Send test**
    checks the webhook at any time.
+
+---
+
+## Deployment
+
+Production runs the whole stack on one Linux VM with Docker Compose behind **Caddy**, which provides automatic
+HTTPS: `deploy/compose.yaml`, `deploy/Caddyfile`, `backend/Dockerfile`, `frontend/Dockerfile`. The worker needs
+to run permanently and Ethereal is SMTP-only (most free PaaS tiers block SMTP ports), so a small VM is a better
+fit than serverless hosting.
+
+```bash
+cd deploy
+cp .env.example .env
+docker compose up -d --build
+```
+
+Step-by-step server setup (VM, free DuckDNS domain, OAuth redirect URLs, troubleshooting) is in
+[`deploy/README.md`](deploy/README.md).
 
 ---
 

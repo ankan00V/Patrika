@@ -1,0 +1,10 @@
+# Caddy gets and renews the HTTPS certificate for $DOMAIN automatically (Let's Encrypt).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API and the Bull Board UI go straight to Express; everything else is the Next.js dashboard.
+	@backend path /api/* /admin/queues /admin/queues/*
+	reverse_proxy @backend api:4000
+
+	reverse_proxy web:3000
+}
