@@ -1,0 +1,23 @@
+{
+  "name": "patrika",
+  "private": true,
+  "description": "Patrika — reliable email campaign scheduler (BullMQ + Redis + Postgres) with a Next.js dashboard",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"npm run dev:api -w backend\" \"npm run dev:worker -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
+    "test": "npm test -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
