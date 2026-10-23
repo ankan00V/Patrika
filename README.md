@@ -102,20 +102,27 @@ patrika/
 **Prerequisites:** Node 20+, npm 10+, Docker. If you'd rather not use Docker, a local Postgres 16, Redis 7 and
 Elasticsearch 8 work too; Elasticsearch is optional.
 
-```bash
-# 1. Infrastructure
-docker compose up -d                 # Postgres :5432, Redis :6379, Elasticsearch :9200
+Run these from the repository root. (The blocks have no inline `#` comments, because zsh, the default macOS
+shell, does not treat them as comments when pasted.)
 
-# 2. Dependencies (npm workspaces: backend + frontend)
-npm install
-
-# 3. Environment
-cp backend/.env.example backend/.env       # then set JWT_SECRET + Google/Slack credentials
-cp frontend/.env.example frontend/.env     # BACKEND_URL, defaults to http://localhost:4000
-
-# 4. Run API + worker + dashboard together
-npm run dev
-```
+1. Start Postgres, Redis and Elasticsearch:
+   ```bash
+   docker compose up -d
+   ```
+2. Install dependencies for both workspaces:
+   ```bash
+   npm install
+   ```
+3. Create the env files. The defaults work locally as they are; add Google and Slack credentials later
+   ([Configuration](#configuration)):
+   ```bash
+   cp backend/.env.example backend/.env
+   cp frontend/.env.example frontend/.env
+   ```
+4. Run the API, the worker and the dashboard together:
+   ```bash
+   npm run dev
+   ```
 
 | Process | URL / command |
 | --- | --- |
@@ -132,9 +139,21 @@ To run the pieces separately (e.g. several workers):
 
 ```bash
 npm run dev:api -w backend
-npm run dev:worker -w backend     # start this as many times as you like
+npm run dev:worker -w backend
 npm run dev -w frontend
 ```
+
+`dev:worker` can be started any number of times; the workers share the queue, the limiter and the hourly counters.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `no such service: #` or `/bin/sh: …: command not found` | A `#` comment was pasted into zsh. Run the commands without comments. |
+| `role "patrika" does not exist` | A Postgres already installed on your machine is using port 5432. Either stop it, or use it: `psql -d postgres -c "CREATE ROLE patrika WITH LOGIN SUPERUSER PASSWORD 'patrika';" -c "CREATE DATABASE patrika OWNER patrika;"`, then `docker compose up -d redis elasticsearch`. |
+| `port is already allocated` on 6379 | A local Redis is running. Use it, and start only `docker compose up -d elasticsearch` (plus `postgres` if needed). |
+| Search says "via Postgres" | Elasticsearch is still starting (about 30 s) or `ELASTICSEARCH_URL` is empty. |
+| `.env` doesn't show in Finder | Files starting with a dot are hidden; press **Cmd + Shift + .** or run `open -e backend/.env`. |
 
 Production build: `npm run build`, then `npm run start:api -w backend`, `npm run start:worker -w backend` and
 `npm run start -w frontend`.
@@ -177,7 +196,9 @@ Ethereal preview link: the ↗ icon on the email page.
 2. *OAuth & Permissions* → add the **`incoming-webhook`** scope and the redirect URL `${APP_URL}/api/slack/callback`.
 3. Slack only accepts **https** redirect URLs, so expose the dashboard through a tunnel
    (`ngrok http 3000` or `cloudflared tunnel --url http://localhost:3000`) and set `APP_URL` to the https URL.
-   Add that URL as a Google redirect URI too.
+   Add that URL as a Google redirect URI too, and open the dashboard through the tunnel URL from then on.
+   The common tunnel domains (ngrok, Cloudflare, localtunnel) are already allowed in `allowedDevOrigins` in
+   `frontend/next.config.ts`; add yours there if you use another one.
 4. Put the app's client id and secret in `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
 5. In the dashboard click **Connect Slack**, pick a channel, and you get a confirmation message. **Send test**
    checks the webhook at any time.
